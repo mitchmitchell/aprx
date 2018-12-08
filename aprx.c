@@ -120,7 +120,7 @@ void timetick(void)
 	// .. which is NOT wall clock time.
 #ifdef HAVE_CLOCK_GETTIME
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	clock_gettime(CLOCK_REALTIME, &ts);
 	tick.tv_usec = ts.tv_nsec/1000;
 	tick.tv_sec  = ts.tv_sec;
         // if (debug) printf("newtick: %d.%6d\n", tick.tv_sec, tick.tv_usec);

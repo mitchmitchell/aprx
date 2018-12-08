@@ -24,6 +24,8 @@ struct timeval now; // public wall clock that can jump around
 
 void printtime(char *buf, int buflen)
 {
+  	struct timeval now;
+        gettimeofday(&now, NULL);
 	struct tm *t = gmtime(&now.tv_sec);
 	// strftime(timebuf, 60, "%Y-%m-%d %H:%M:%S", t);
 	sprintf(buf, "%04d-%02d-%02d %02d:%02d:%02d",
@@ -35,6 +37,8 @@ void printtime(char *buf, int buflen)
 void erlang_snmp(void)
 {
 	int i;
+  	struct timeval now;
+        gettimeofday(&now, NULL);
 
 	/* SNMP data output - continuously growing counters
 	 */
@@ -59,6 +63,8 @@ void erlang_snmp(void)
 void erlang_xml(int topmode)
 {
 	int i, j, k, t;
+  	struct timeval now;
+        gettimeofday(&now, NULL);
 
 	/* What this outputs is not XML, but a mild approximation
 	   of the data that XML version would output.. 
@@ -203,6 +209,7 @@ int main(int argc, char **argv)
 	int opt;
 	int mode_snmp = 0;
 	int mode_xml = 0;
+  	struct timeval now;
 
         gettimeofday(&now, NULL);
 
