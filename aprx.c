@@ -120,7 +120,11 @@ void timetick(void)
 	// .. which is NOT wall clock time.
 #ifdef HAVE_CLOCK_GETTIME
 	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
+	// Must stay CLOCK_MONOTONIC: with CLOCK_REALTIME every NTP step
+	// looks like a time jump and triggers time_reset (APRS-IS
+	// reconnect, all timers re-initialized).  Timestamps that need
+	// wall-clock time (erlang data shown by aprx-stat) use time(NULL).
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 	tick.tv_usec = ts.tv_nsec/1000;
 	tick.tv_sec  = ts.tv_sec;
         // if (debug) printf("newtick: %d.%6d\n", tick.tv_sec, tick.tv_usec);

@@ -1376,20 +1376,9 @@ void interface_receive_3rdparty( const struct aprx_interface *aif,
           int ax25addrlen, ax25len;
           int tnc2addrlen, tnc2len;
 
-          // This is APRS packet, parse for APRS meaning ...
-          rc = parse_aprs(pb,
-#ifndef DISABLE_IGATE
-                          historydb // Transmitter HistoryDB
-#else
-                          NULL
-#endif
-                          ); // look inside 3rd party -- TODO: but what HISTORYDB ?
-          if (debug) {
-            const char *srcif = aif->callsign ? aif->callsign : "??";
-            printf(".. parse_aprs() rc=%s  type=0x%02x srcif=%s tnc2addr='%s'  info_start='%s'\n",
-                   rc ? "OK":"FAIL", pb->packettype, srcif, pb->data,
-                   pb->info_start);
-          }
+          // NOTE: the temporary filter pbuf was released above with
+          //       pbuf_put(); it must not be touched here.  A fresh pbuf
+          //       is built and parsed for each transmitter below.
 
 
 	  // Produced 3rd-party packet:
@@ -1623,8 +1612,11 @@ void interface_receive_3rdparty( const struct aprx_interface *aif,
 	    if (hist_rx != NULL && discard_this == 0) {
 	      if (timecmp(hist_rx->last_heard[tx_aif->ifgroup], recent_time) >= 0) {
 		// Heard recently enough
-		discard_this = 0;
 		if (debug) printf("History entry for receiving call '%s' from RADIO is recent enough.  KEEPING.\n", recipient);
+	      } else {
+		// Known, but not heard on this transmitter's radio recently
+		discard_this = 1;
+		if (debug) printf("Receiving call '%s' not heard on RADIO recently.  DISCARDING.\n", recipient);
 	      }
 	    }
 
@@ -1637,7 +1629,7 @@ void interface_receive_3rdparty( const struct aprx_interface *aif,
 	    if (hist_rx != NULL && timecmp(hist_rx->last_heard[0], recent_time) > 0) {
 	      // "is heard recently via internet"
 	      discard_this = 1;
-	      if (debug) printf("History entry for sending call '%s' from APRSIS is too new.  DISCARDING.\n", fromcall);
+	      if (debug) printf("History entry for receiving call '%s' from APRSIS is too new.  DISCARDING.\n", recipient);
 	    }
 	  }
 
@@ -1695,8 +1687,19 @@ static int dstname_is_myself(const struct pbuf_t*const pb, char *dstname, const 
 	// Copy message destination, if available.
         *dstname = 0; // always clear first..
         if (pb->dstname != NULL) {
-          strncpy(dstname, pb->dstname, DSTNAMELEN-1);
-          dstname[DSTNAMELEN-1] = 0;
+          // The addressee field is space-padded to 9 chars and followed
+          // by ':' -- copy only the callsign itself.
+          int i;
+          for (i = 0; i < CALLSIGNLEN_MAX && i < DSTNAMELEN-1; ++i) {
+            const char c = pb->dstname[i];
+            if (c == 0 || c == ' ' || c == ':')
+              break;
+            dstname[i] = c;
+          }
+          dstname[i] = 0;
+        }
+        if (*dstname == 0) {
+          return 0;
         }
 
         if (strcmp(dstname, mycall) == 0) {
@@ -1744,7 +1747,8 @@ static void ack_message(const struct aprx_interface *const srcif, const struct a
           *t++ = 'a';
           *t++ = 'c';
           *t++ = 'k';
-          for (i = 0, s = am->msgid; i < am->msgid_len; ++i) {
+          // txt[] has room for 14 + 30 chars; APRS msgids are <= 5
+          for (i = 0, s = am->msgid; i < am->msgid_len && i < 30; ++i) {
             *t++ = *s++;
           }
           txtlen = t - txt;

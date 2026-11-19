@@ -73,7 +73,8 @@ struct aprsis {
 
 	char wrbuf[16000];
 	char rdbuf[3000];
-	char rdline[500];
+	char rdline[600];	/* APRS-IS lines are at most 512 bytes */
+	int  rdline_overflow;	/* current line did not fit in rdline */
 };
 
 char * const aprsis_loginid;
@@ -176,8 +177,15 @@ static int aprsis_queue_(
 
 	addrlen = 0;
 	if (addr) {
-		addrlen = sprintf(addrbuf, "%s,qA%c,%s:", addr, qtype,
+		addrlen = snprintf(addrbuf, sizeof(addrbuf), "%s,qA%c,%s:", addr, qtype,
 				(gwcall && *gwcall) ? gwcall : A->H->login);
+		if (addrlen < 0 || addrlen >= (int)sizeof(addrbuf)) {
+			/* Address header is absurdly long (e.g. crafted
+			   3rd-party frame from RF); drop it rather than
+			   overflow addrbuf. */
+			if (debug) printf("APRSIS: address header too long (%d), dropped\n", addrlen);
+			return 2;
+		}
 	}
 	aprsis_login = A->H->login;
 
@@ -189,7 +197,7 @@ static int aprsis_queue_(
 	if ((sizeof(A->wrbuf) - 10) <= (A->wrbuf_len + len)) {
 		/* The string does not fit in, perhaps it needs compacting ? */
 		if (A->wrbuf_cur > 0) { /* Compacting is possible ! */
-			memcpy(A->wrbuf, A->wrbuf + A->wrbuf_cur,
+			memmove(A->wrbuf, A->wrbuf + A->wrbuf_cur,
 					A->wrbuf_len - A->wrbuf_cur);
 			A->wrbuf_len -= A->wrbuf_cur;
 			A->wrbuf_cur = 0;
@@ -414,7 +422,13 @@ static int aprsis_sockreadline(struct aprsis *A)
 		c = 0xFF & (A->rdbuf[i]);
 		if (c == '\r' || c == '\n') {
 			/* End of line, process.. */
-			if (A->rdlin_len > 0) {
+			if (A->rdline_overflow) {
+				/* Line was longer than rdline; it was not
+				   stored whole, so drop it instead of
+				   forwarding a truncated packet. */
+				if (debug) printf("APRSIS: dropped over-long line\n");
+				A->rdline_overflow = 0;
+			} else if (A->rdlin_len > 0) {
 				A->rdline[A->rdlin_len] = 0;
 				/* */
 				A->last_read = tick.tv_sec; /* Time stamp me ! */
@@ -438,6 +452,8 @@ static int aprsis_sockreadline(struct aprsis *A)
 		}
 		if (A->rdlin_len < sizeof(A->rdline) - 2) {
 			A->rdline[A->rdlin_len++] = c;
+		} else {
+			A->rdline_overflow = 1;
 		}
 	}
 	A->rdbuf_cur = 0;
@@ -455,8 +471,8 @@ static int aprsis_sockread(struct aprsis *A)
 	if (A->rdbuf_cur > 0) {
 		/* Read-out cursor is not at block beginning,
 		   is there unread data too ? */
-		if (A->rdbuf_cur > A->rdbuf_len) {
-			memcpy(A->rdbuf, A->rdbuf + A->rdbuf_cur,
+		if (A->rdbuf_cur < A->rdbuf_len) {
+			memmove(A->rdbuf, A->rdbuf + A->rdbuf_cur,
 					A->rdbuf_len - A->rdbuf_cur);
 			A->rdbuf_len -= A->rdbuf_cur;
 		} else
@@ -506,7 +522,7 @@ static void aprsis_readup(void)
 	int textlen;
 	struct aprsis_tx_msg_head head;
 
-	recv_len = recv(aprsis_up, buf, sizeof(buf), 0);
+	recv_len = recv(aprsis_up, buf, sizeof(buf) - 3, 0); /* room for NUL; aprsis_queue_() appends CRLF in place */
 	if (recv_len == 0) { // EOF !
 		if (debug>1) printf("Upstream fd read resulted eof status.\n");
 		die_now = 1;
@@ -517,6 +533,9 @@ static void aprsis_readup(void)
 	}
 	buf[recv_len] = 0;		/* String Termination NUL byte */
 
+	if (recv_len < (int)sizeof(head)) {
+		return;		/* Runt message */
+	}
 	memcpy(&head, buf, sizeof(head));
 	addr = buf + sizeof(head);
 	gwcall = addr + head.addrlen + 1;

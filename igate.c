@@ -19,7 +19,7 @@ const char *tnc2_verify_callsign_format(const char *t, int starok, int strictax2
 {
 	const char *s = t;
 
-	for (; *s && s < e; ++s) {
+	for (; s < e && *s; ++s) {
 		/* Valid station-id charset is:  [A-Z0-9] */
 		int c = *s;
 		if (!(('A' <= c && c <= 'Z') || ('0' <= c && c <= '9'))) {
@@ -27,15 +27,25 @@ const char *tnc2_verify_callsign_format(const char *t, int starok, int strictax2
 			break;
 		}
 	}
+	if (s - t > CALLSIGNLEN_MAX) {
+		/* Station-id longer than any valid callsign (also
+		   bounds crafted 3rd-party headers from RF) */
+		if (debug)
+			printf("callsign too long: '%.20s'\n", t);
+		return NULL;
+	}
 	/* Now *s can be any of: '>,*-:' */
 	if (*s == '-') {
 		/* Minus and digits.. */
 		++s;
 		if (strictax25) {
-		  if ('1' <= *s && *s <= '9')
+		  // SSID 1..15 only; "-0", "-16".."-99" and a bare "-" are invalid
+		  if (s[0] == '1' && '0' <= s[1] && s[1] <= '5')
+		    s += 2;
+		  else if ('1' <= s[0] && s[0] <= '9')
 		    ++s;
-		  if ('0' <= *s && *s <= '9')
-		    ++s;
+		  else
+		    return NULL;
 		} else {
 		  // Up to 2 of any alphanumeric
 		  if (('0' <= *s && *s <= '9') ||
@@ -118,8 +128,8 @@ static const char *tnc2_forbidden_destination_stationid(const char *t, const int
 
 	if (memcmp("TCPIP", t, 5) == 0 ||	/* just plain wrong */
 	    memcmp("TCPXX", t, 5) == 0 ||	/* Forbidden to gate */
-	    memcmp("NOGATE", t, 5) == 0 ||	/* Forbidden to gate */
-	    memcmp("RFONLY", t, 5) == 0 ||	/* Forbidden to gate */
+	    memcmp("NOGATE", t, 6) == 0 ||	/* Forbidden to gate */
+	    memcmp("RFONLY", t, 6) == 0 ||	/* Forbidden to gate */
 	    memcmp("N0CALL", t, 6) == 0 ||	/* TNC default setting */
 	    memcmp("NOCALL", t, 6) == 0)	/* TNC default setting */
 		return NULL;
