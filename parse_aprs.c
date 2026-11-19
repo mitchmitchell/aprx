@@ -1232,6 +1232,12 @@ int parse_aprs(struct pbuf_t*const pb, historydb_t*const historydb)
 		if (memcmp(body,"SKY",3) == 0)  // as seen on specification
 			pb->packettype |= T_NWS;
 
+		// Addressee is a fixed 9 char field followed by ':'.
+		// Too short a packet can not be a valid message, don't
+		// look past its end.
+		if (body_end - body < 10)
+			return 1;
+
 		// Is it perhaps TELEMETRY related "message" ?
 		if ( body[9] == ':' &&
 		     ( memcmp( body+9, ":PARM.", 6 ) == 0 ||
@@ -1267,6 +1273,7 @@ int parse_aprs(struct pbuf_t*const pb, historydb_t*const historydb)
 				// to 9 chars, while our historydb is not.
 				if (*p == 0 || *p == ' ' || *p == ':')
 					break;
+				++p;
 			}
 			pb->dstname_len = p - body;
 #ifndef DISABLE_IGATE
@@ -1382,12 +1389,14 @@ int parse_aprs_message(const struct pbuf_t *pb, struct aprs_message_t * const am
         if (!(pb->packettype & T_MESSAGE))
                 return -1;
                 
+        /* ":ADDRESSEE:" is 11 chars; aprx pbuf data has no CRLF */
+        if (pb->packet_len - (pb->info_start - pb->data) < 11)
+                return -2;
         if (pb->info_start[10] != ':')
                 return -2;
         
         am->body = pb->info_start + 11;
-        /* -2 for the CRLF already in place */
-        am->body_len = pb->packet_len - 2 - (pb->info_start - pb->data);
+        am->body_len = pb->packet_len - (am->body - pb->data);
         
         /* search for { looking backwards from the end of the packet,
          * it separates the msgid
@@ -1398,7 +1407,7 @@ int parse_aprs_message(const struct pbuf_t *pb, struct aprs_message_t * const am
         
         if (*p == '{') {
                 am->msgid = p+1;
-                am->msgid_len = pb->packet_len - 2 - (am->msgid - pb->data);
+                am->msgid_len = pb->packet_len - (am->msgid - pb->data);
                 am->body_len = p - am->body;
         }
         

@@ -576,6 +576,11 @@ static int rxsock_read( const int fd )
 	if (rcvlen < 0) {
 		return 0;	/* No more at this time.. */
 	}
+	if (rcvlen < 1 + 14 + 2) {
+		/* KISS port byte + minimal AX.25 header + Ctrl + PID;
+		   anything shorter is not of our interest. */
+		return 1;
+	}
 
 /*
 struct sockaddr_ll

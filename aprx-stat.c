@@ -18,15 +18,18 @@ int erlangout;
 int epochtime;
 const char *aprxlogfile;	/* linkage dummy */
 const char *mycall;		/* linkage dummy */
-struct timeval now; // public wall clock that can jump around
+// NB: 'now' and 'tick' are defined in timercmp.c, which is linked into
+// aprx-stat; a second definition here is a link error with GCC >= 10.
 
 #ifdef ERLANGSTORAGE
 
 void printtime(char *buf, int buflen)
 {
-  	struct timeval now;
-        gettimeofday(&now, NULL);
-	struct tm *t = gmtime(&now.tv_sec);
+	struct timeval now;
+	struct tm *t;
+
+	gettimeofday(&now, NULL);
+	t = gmtime(&now.tv_sec);
 	// strftime(timebuf, 60, "%Y-%m-%d %H:%M:%S", t);
 	sprintf(buf, "%04d-%02d-%02d %02d:%02d:%02d",
 		t->tm_year+1900,t->tm_mon+1,t->tm_mday,
@@ -37,8 +40,9 @@ void printtime(char *buf, int buflen)
 void erlang_snmp(void)
 {
 	int i;
-  	struct timeval now;
-        gettimeofday(&now, NULL);
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
 
 	/* SNMP data output - continuously growing counters
 	 */
@@ -63,8 +67,9 @@ void erlang_snmp(void)
 void erlang_xml(int topmode)
 {
 	int i, j, k, t;
-  	struct timeval now;
-        gettimeofday(&now, NULL);
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
 
 	/* What this outputs is not XML, but a mild approximation
 	   of the data that XML version would output.. 
@@ -209,9 +214,6 @@ int main(int argc, char **argv)
 	int opt;
 	int mode_snmp = 0;
 	int mode_xml = 0;
-  	struct timeval now;
-
-        gettimeofday(&now, NULL);
 
 	while ((opt = getopt(argc, argv, "f:StxX?h")) != -1) {
 		switch (opt) {

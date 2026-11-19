@@ -146,8 +146,13 @@ int ax25_format_to_tnc(const uint8_t *frame, const int framelen,
 	  printf("\n");
 	}
 
-	if (framelen > sizeof(tnc2buf) - 80) {
-		/* Too much ! Too much! */
+	/* Need at least destination + source addresses.  The TNC2 text
+	   form of the address block is at most ~110 chars (8 vias max,
+	   enforced below), and the payload is copied 1:1, so the output
+	   fits if framelen leaves that much headroom.  NB: tnc2buf is a
+	   pointer here; sizeof(tnc2buf) would be the pointer size. */
+	if (framelen < 14 || framelen > tnc2buflen - 128) {
+		/* Too short, or too much ! */
 		return 0;
 	}
 
@@ -187,7 +192,18 @@ int ax25_format_to_tnc(const uint8_t *frame, const int framelen,
 
 	if ((i & 1) == 0) {	/* addresses continue after the source! */
 
-		for (; s < e;) {
+		for (;;) {
+			if (s + 7 > e) {
+				/* Address field runs past end of frame */
+				if (debug) printf("Ax25FmtToTNC2: Truncated via address field\n");
+				return 0;
+			}
+			if (viacount >= 8) {
+				/* Checked before formatting, so a frame full of
+				   via fields can not overflow tnc2buf */
+				if (debug) printf("Ax25FmtToTNC2: More than 8 via fields!\n");
+				return 0;
+			}
 			*t++ = ',';	/* separator char */
 			*t = 0; // end-string, just in case..
 			i = ax25_to_tnc2_fmtaddress(t, s, 1); // Top 3 bits are:  H11  ( H = "has been digipeated" )
@@ -204,12 +220,6 @@ int ax25_format_to_tnc(const uint8_t *frame, const int framelen,
 				break;	/* last address */
 		}
 	}
-	if (viacount > 8) {
-		if (debug)
-		  printf("Ax25FmtToTNC2: Found %d via fields, limit is 8!\n", viacount);
-		return 0;
-	}
-
 	*frameaddrlen = s - frame;
 	*tnc2addrlen  = t - tnc2buf;
 
